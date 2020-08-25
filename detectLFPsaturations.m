@@ -52,27 +52,73 @@ time = dt:dt:dt*numel(lfp);
 if strcmp(method, 'hist1') || strcmp(method, 'hist2') % histogam method
   nBins = 1000;
   SDfraction = 0.05;
+  extremeProportions = 20;
+  minCount = 50;
+  minDuration1 = 0.003;
+  minDuration2 = 0.05;
+  nPeaks = 3;
+  dPeaks = 3;
   [lfpHisto, voltage] = hist(lfp,nBins); %#ok<*HIST>
-  [count1, peak1Loc] = max(lfpHisto(1:floor(nBins/10)));
-  peak1 = voltage(peak1Loc);
+  % Peak 1
+  [count1, peak1Loc] = findpeaks(lfpHisto(1:floor(nBins/extremeProportions)),...
+    'MinPeakHeight',minCount, 'MinPeakProminence',minCount, 'MinPeakDistance',dPeaks);
+  [count1, inds] = maxk(count1,nPeaks);
+  peak1Loc = peak1Loc(inds);
+  if ~isempty(count1)
+    peak1 = voltage(peak1Loc);
+  else
+    peak1 = [];
+  end
+  % Peak 2
   [count2, peak2Loc] = max(lfpHisto(round(nBins/2)-10+1:round(nBins/2)+10));
-  peak2Loc = round(nBins/2) - 10 + peak2Loc;
-  peak2 = voltage(peak2Loc);
-  [count3, peak3Loc] = max(lfpHisto(end-floor(nBins/10)+1:end));
-  peak3Loc = nBins - floor(nBins/10) + peak3Loc;
-  peak3 = voltage(peak3Loc);
+  if count2 < minCount
+    count2 = [];
+    peak2Loc = [];
+    peak2 = [];
+  else
+    peak2Loc = round(nBins/2) - 10 + peak2Loc;
+    peak2 = voltage(peak2Loc);
+  end
+  % Peak 3
+  [count3, peak3Loc] = findpeaks(lfpHisto(end-floor(nBins/extremeProportions)+1:end),...
+    'MinPeakHeight',minCount, 'MinPeakProminence',minCount, 'MinPeakDistance',dPeaks);
+  [count3, inds] = maxk(count3,nPeaks);
+  peak3Loc = peak3Loc(inds);
+  if ~isempty(count3)
+    peak3Loc = nBins - floor(nBins/extremeProportions) + peak3Loc;
+    peak3 = voltage(peak3Loc);
+  else
+    peak3 = [];
+  end
   SD = std(lfp);
   SDfraction = SDfraction*SD;
-  minDuration1 = 0.002;
-  minDuration2 = 0.1;
   
-  [LFPsaturations1, nSaturations1, fSaturations1] = detectionAlgorithm(lfp, time, peak1, SDfraction, minDuration1);
-  if strcmp(method, 'hist1')
+  % Peak 1
+  LFPsaturations1 = zeros(size(lfp)); nSaturations1 = 0; fSaturations1 = 0;
+  if ~isempty(peak1)
+    for iPk = 1:numel(peak1)
+      [LFPsaturations1temp, nSaturations1temp, fSaturations1temp] = detectionAlgorithm(lfp, time, peak1(iPk), SDfraction, minDuration1);
+      LFPsaturations1 = LFPsaturations1 + LFPsaturations1temp;
+      nSaturations1 = nSaturations1 + nSaturations1temp;
+      fSaturations1 = fSaturations1 + fSaturations1temp;
+    end
+  end
+  % Peak 2
+  if strcmp(method, 'hist1') && ~isempty(peak2)
     [LFPsaturations2, nSaturations2, fSaturations2] = detectionAlgorithm(lfp, time, peak2, SDfraction, minDuration2);
   else
     LFPsaturations2 = zeros(size(lfp)); nSaturations2 = 0; fSaturations2 = 0;
   end
-  [LFPsaturations3, nSaturations3, fSaturations3] = detectionAlgorithm(lfp, time, peak3, SDfraction, minDuration1);
+  % Peak 3
+  LFPsaturations3 = zeros(size(lfp)); nSaturations3 = 0; fSaturations3 = 0;
+  if ~isempty(peak3)
+    for iPk = 1:numel(peak3)
+      [LFPsaturations3temp, nSaturations3temp, fSaturations3temp] = detectionAlgorithm(lfp, time, peak3(iPk), SDfraction, minDuration1);
+      LFPsaturations3 = LFPsaturations3 + LFPsaturations3temp;
+      nSaturations3 = nSaturations3 + nSaturations3temp;
+      fSaturations3 = fSaturations3 + fSaturations3temp;
+    end
+  end
   LFPsaturations = zeros(size(lfp));
   LFPsaturations(LFPsaturations1 | LFPsaturations2 | LFPsaturations3) = 1;
   nSaturations = nSaturations1 + nSaturations2 + nSaturations3;
@@ -89,13 +135,15 @@ end
 
 %% Draw graphs
 if methodPlot
-  saturationTimes = time(logical(LFPsaturations));
+  if sum(LFPsaturations)
+    saturationTimes = time(logical(LFPsaturations));
+  end
   if strcmp(method, 'hist1') || strcmp(method, 'hist2')
     f(1) = figure; hold on
     plot(voltage, lfpHisto);
-    if strcmp(method, 'hist1')
+    if strcmp(method, 'hist1') && (~isempty(count1) || ~isempty(count2) || ~isempty(count3))
       plot(voltage([peak1Loc peak2Loc peak3Loc]), [count1 count2 count3], 'r.', 'MarkerSize',10);
-    elseif strcmp(method, 'hist2')
+    elseif strcmp(method, 'hist2') && (~isempty(count1) || ~isempty(count3))
       plot(voltage([peak1Loc peak3Loc]), [count1 count3], 'r.', 'MarkerSize',10);
     end
     hold off
@@ -107,20 +155,35 @@ if methodPlot
     
     f(2) = figure; hold on
     plot(time,lfp);
-    p1 = plot([0 time(end)], [peak1 peak1], 'r');
-    p2 = plot([0 time(end)], [peak1-SDfraction peak1-SDfraction], 'g');
-    plot([0 time(end)], [peak1+SDfraction peak1+SDfraction], 'g');
-    if strcmp(method, 'hist1')
-      plot([0 time(end)], [peak2 peak2], 'r');
-      plot([0 time(end)], [peak2-SDfraction peak2-SDfraction], 'g');
+    % Peak 1
+    if ~isempty(count1)
+      for iPk = 1:numel(peak1)
+        p1 = plot([0 time(end)], [peak1(iPk) peak1(iPk)], 'r');
+        p2 = plot([0 time(end)], [peak1(iPk)-SDfraction peak1(iPk)-SDfraction], 'g');
+        plot([0 time(end)], [peak1(iPk)+SDfraction peak1(iPk)+SDfraction], 'g');
+      end
+    end
+    % Peak 2
+    if strcmp(method, 'hist1') && ~isempty(count2)
+      p1 = plot([0 time(end)], [peak2 peak2], 'r');
+      p2 = plot([0 time(end)], [peak2-SDfraction peak2-SDfraction], 'g');
       plot([0 time(end)], [peak2+SDfraction peak2+SDfraction], 'g');
     end
-    plot([0 time(end)], [peak3 peak3], 'r');
-    plot([0 time(end)], [peak3-SDfraction peak3-SDfraction], 'g');
-    plot([0 time(end)], [peak3+SDfraction peak3+SDfraction], 'g');
-    p3 = plot(saturationTimes, zeros(size(saturationTimes)), 'r.', 'MarkerSize',10);
+    % Peak 3
+    if ~isempty(count3)
+      for iPk = 1:numel(peak3)
+        p1 = plot([0 time(end)], [peak3(iPk) peak3(iPk)], 'r');
+        p2 = plot([0 time(end)], [peak3(iPk)-SDfraction peak3(iPk)-SDfraction], 'g');
+        plot([0 time(end)], [peak3(iPk)+SDfraction peak3(iPk)+SDfraction], 'g');
+      end
+    end
+    if sum(LFPsaturations)
+      p3 = plot(saturationTimes, zeros(size(saturationTimes)), 'r.', 'MarkerSize',10);
+    end
     hold off
-    legend([p1 p2 p3], {'saturation values','+/-0.05*SD','LFP saturations'})
+    if sum(LFPsaturations)
+      legend([p1 p2 p3], {'saturation values','+/-0.05*SD','LFP saturations'})
+    end
     xlabel('Time (s)')
     ylabel('LFP (\muV)')
     title('LFP saturations');
@@ -161,8 +224,7 @@ histDiff(histDiff < threshold) = 0;
 saturations = saturations(logical(histDiff));
 nSaturations = numel(saturations);
 fSaturations = nSaturations/((time(end) - time(1))/60);
+[~,overlapInds] = ismember(cumsumDiff,saturations);
 LFPsaturations = zeros(size(signal));
-for iSat = 1:numel(saturations)
-  LFPsaturations(cumsumDiff == saturations(iSat)) = 1;
-end
+LFPsaturations(logical(overlapInds)) = 1;
 meanSatDuration = (sum(LFPsaturations)*dt)/nSaturations;

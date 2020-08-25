@@ -188,12 +188,13 @@ srInterpInit = options.srInterpInit;
 srInterpFinal = options.srInterpFinal;
 chOI = options.chOI;
 deleteChans = options.deleteChans;
+deleteChans = unique(deleteChans);
 lfpCAR = options.lfpCAR;
 transformFunc = options.transformFunc;
 powerCalcMethod = options.powerCalcMethod;
 saturationMethod = options.saturationMethod;
 spectrogram = options.spectrogram;
-rippleDuration = options.rippleDuration;
+rippleDuration = round(options.rippleDuration*srInterpInit);
 wGaussian = options.wGaussian;
 sdGaussian = options.sdGaussian;
 saturationPlot = options.saturationPlot;
@@ -213,6 +214,7 @@ theta2deltaRatio = {};
 slowPower = {};
 fastPower = {};
 ultraFastPower = {};
+f = {};
 
 
 %% Load and interpolate the data; then apply wavelet transform to estimate LFP band power
@@ -276,18 +278,15 @@ while 1
     elseif strcmp(lfpCAR, 'add')
       load(medianFile); %#ok<*LOAD>
       datSamples = size(dat,2);
-      if addMedian && (exist('medianTrace','var') && ~isempty(medianTrace))
-        median2Add = int16(repmat(medianTrace(sampleCount+1:sampleCount+datSamples),size(dat,1),1));
+      if (exist('medianTrace','var') && ~isempty(medianTrace))
+        median2Add = int16(repmat(medianTrace(sampleCount+1:sampleCount+datSamples),size(channelMedian,1),1));
       else
-        median2Add = int16(repmat(zeros(size(sampleCount+1:sampleCount+datSamples)),size(dat,1),1));
+        median2Add = int16(repmat(zeros(size(sampleCount+1:sampleCount+datSamples)),size(channelMedian,1),1));
       end
-      if addMedian && (exist('channelMedian','var') && ~isempty(channelMedian)) %#ok<*USENS,*NODEF>
+      if (exist('channelMedian','var') && ~isempty(channelMedian)) %#ok<*USENS,*NODEF>
         median2Add = median2Add + repmat(channelMedian(:,chunkInd),1,size(median2Add,2));
       end
-      if numel(swapOrder_temp) < nChans
-        median2Add = [median2Add; int16(zeros(1,size(median2Add,2)))];
-      end
-      dat = dat+median2Add;
+      dat(1:size(median2Add,1),:) = dat(1:size(median2Add,1),:)+median2Add;
       sampleCount = sampleCount + datSamples;
     end
     
@@ -351,7 +350,7 @@ end
 % Detect LFP trace saturations
 for iCh = 1:numel(chOI)
   [LFPsaturations{iCh}, interpTimes, nLFPsaturations{iCh}, fLFPsaturations{iCh}, meanDurationLFPsaturations{iCh},...
-    f{iCh}] = detectLFPsaturations(LFPsaturations{iCh}, interpTimes(2)-interpTimes(1), saturationMethod, saturationPlot, [], chOI(iCh));
+    f{iCh}] = detectLFPsaturations(LFPsaturations{iCh}, interpTimes(2)-interpTimes(1), saturationMethod, saturationPlot, fileName, chOI(iCh));
 end
 
 
