@@ -52,9 +52,9 @@ time = dt:dt:dt*numel(lfp);
 if strcmp(method, 'hist1') || strcmp(method, 'hist2') % histogam method
   nBins = 1000;
   SDfraction = 0.05;
-  extremeProportions = 20;
+  extremeProportions = 10;
   minCount = 50;
-  minDuration1 = 0.003;
+  minDuration1 = 0.001;
   minDuration2 = 0.05;
   nPeaks = 3;
   dPeaks = 3;
@@ -70,14 +70,16 @@ if strcmp(method, 'hist1') || strcmp(method, 'hist2') % histogam method
     peak1 = [];
   end
   % Peak 2
-  [count2, peak2Loc] = max(lfpHisto(round(nBins/2)-10+1:round(nBins/2)+10));
-  if count2 < minCount
-    count2 = [];
-    peak2Loc = [];
-    peak2 = [];
-  else
-    peak2Loc = round(nBins/2) - 10 + peak2Loc;
-    peak2 = voltage(peak2Loc);
+  if strcmp(method, 'hist1')
+    [count2, peak2Loc] = max(lfpHisto(round(nBins/2)-10+1:round(nBins/2)+10));
+    if count2 < minCount
+      count2 = [];
+      peak2Loc = [];
+      peak2 = [];
+    else
+      peak2Loc = round(nBins/2) - 10 + peak2Loc;
+      peak2 = voltage(peak2Loc);
+    end
   end
   % Peak 3
   [count3, peak3Loc] = findpeaks(lfpHisto(end-floor(nBins/extremeProportions)+1:end),...
@@ -97,7 +99,7 @@ if strcmp(method, 'hist1') || strcmp(method, 'hist2') % histogam method
   LFPsaturations1 = zeros(size(lfp)); nSaturations1 = 0; fSaturations1 = 0;
   if ~isempty(peak1)
     for iPk = 1:numel(peak1)
-      [LFPsaturations1temp, nSaturations1temp, fSaturations1temp] = detectionAlgorithm(lfp, time, peak1(iPk), SDfraction, minDuration1);
+      [LFPsaturations1temp, nSaturations1temp, fSaturations1temp] = saturationAlgorithm(lfp, time, peak1(iPk), SDfraction, minDuration1);
       LFPsaturations1 = LFPsaturations1 + LFPsaturations1temp;
       nSaturations1 = nSaturations1 + nSaturations1temp;
       fSaturations1 = fSaturations1 + fSaturations1temp;
@@ -105,7 +107,7 @@ if strcmp(method, 'hist1') || strcmp(method, 'hist2') % histogam method
   end
   % Peak 2
   if strcmp(method, 'hist1') && ~isempty(peak2)
-    [LFPsaturations2, nSaturations2, fSaturations2] = detectionAlgorithm(lfp, time, peak2, SDfraction, minDuration2);
+    [LFPsaturations2, nSaturations2, fSaturations2] = saturationAlgorithm(lfp, time, peak2, SDfraction, minDuration2);
   else
     LFPsaturations2 = zeros(size(lfp)); nSaturations2 = 0; fSaturations2 = 0;
   end
@@ -113,16 +115,31 @@ if strcmp(method, 'hist1') || strcmp(method, 'hist2') % histogam method
   LFPsaturations3 = zeros(size(lfp)); nSaturations3 = 0; fSaturations3 = 0;
   if ~isempty(peak3)
     for iPk = 1:numel(peak3)
-      [LFPsaturations3temp, nSaturations3temp, fSaturations3temp] = detectionAlgorithm(lfp, time, peak3(iPk), SDfraction, minDuration1);
+      [LFPsaturations3temp, nSaturations3temp, fSaturations3temp] = saturationAlgorithm(lfp, time, peak3(iPk), SDfraction, minDuration1);
       LFPsaturations3 = LFPsaturations3 + LFPsaturations3temp;
       nSaturations3 = nSaturations3 + nSaturations3temp;
       fSaturations3 = fSaturations3 + fSaturations3temp;
     end
   end
+  % Extreme deviations
+  if isempty(peak1)
+    LFPsaturations4 = zeros(size(lfp)); nSaturations4 = 0; fSaturations4 = 0;
+  else
+    LFPsaturations = zeros(size(lfp));
+    LFPsaturations(LFPsaturations1 | LFPsaturations2 | LFPsaturations3) = 1;
+    [LFPsaturations4, nSaturations4, fSaturations4] = deviationAlgorithm(-lfp, time, min(-peak1), LFPsaturations);
+  end
+  if isempty(peak3)
+    LFPsaturations5 = zeros(size(lfp)); nSaturations5 = 0; fSaturations5 = 0;
+  else
+    LFPsaturations = zeros(size(lfp));
+    LFPsaturations(LFPsaturations1 | LFPsaturations2 | LFPsaturations3 | LFPsaturations4) = 1;
+    [LFPsaturations5, nSaturations5, fSaturations5] = deviationAlgorithm(lfp, time, min(peak3), LFPsaturations);
+  end
   LFPsaturations = zeros(size(lfp));
-  LFPsaturations(LFPsaturations1 | LFPsaturations2 | LFPsaturations3) = 1;
-  nSaturations = nSaturations1 + nSaturations2 + nSaturations3;
-  fSaturations = fSaturations1 + fSaturations2 + fSaturations3;
+  LFPsaturations(LFPsaturations1 | LFPsaturations2 | LFPsaturations3 | LFPsaturations4 | LFPsaturations5) = 1;
+  nSaturations = nSaturations1 + nSaturations2 + nSaturations3 + nSaturations4 + nSaturations5;
+  fSaturations = fSaturations1 + fSaturations2 + fSaturations3 + fSaturations4 + fSaturations5;
   meanSatDuration = (sum(LFPsaturations)*dt)/nSaturations;
 elseif strcmp(method, 'diff') % rate of change method
   diffLFP = diff(lfp);
@@ -130,7 +147,7 @@ elseif strcmp(method, 'diff') % rate of change method
   stdDiff = std(diffLFP);
   thrDiff = 0.25*stdDiff;
   minDuration = 0.1;
-  [LFPsaturations, nSaturations, fSaturations, meanSatDuration] = detectionAlgorithm(diffLFP, time, 0, thrDiff, minDuration);
+  [LFPsaturations, nSaturations, fSaturations, meanSatDuration] = saturationAlgorithm(diffLFP, time, 0, thrDiff, minDuration);
 end
 
 %% Draw graphs
@@ -210,7 +227,7 @@ end
 
 
 %% Local functions
-function [LFPsaturations, nSaturations, fSaturations, meanSatDuration] = detectionAlgorithm(signal, time, saturationValue, thresholdDeviation, minDuration)
+function [LFPsaturations, nSaturations, fSaturations, meanSatDuration] = saturationAlgorithm(signal, time, saturationValue, thresholdDeviation, minDuration)
 
 absDiff = abs(signal-saturationValue);
 absDiff(absDiff < thresholdDeviation) = 0;
@@ -219,7 +236,7 @@ cumsumDiff = cumsum(absDiff);
 saturations = unique(cumsumDiff);
 histDiff = hist(cumsumDiff, saturations);
 dt = time(2) - time(1);
-threshold = minDuration/dt;
+threshold = round(minDuration/dt) + 1;
 histDiff(histDiff < threshold) = 0;
 saturations = saturations(logical(histDiff));
 nSaturations = numel(saturations);
@@ -228,3 +245,14 @@ fSaturations = nSaturations/((time(end) - time(1))/60);
 LFPsaturations = zeros(size(signal));
 LFPsaturations(logical(overlapInds)) = 1;
 meanSatDuration = (sum(LFPsaturations)*dt)/nSaturations;
+
+
+function [deviations, nDeviations, fDeviations, meanDevDuration] = deviationAlgorithm(signal, time, thresholdDeviation, exclude)
+
+deviations = zeros(size(signal));
+deviations(signal >= thresholdDeviation) = 1;
+deviations(logical(exclude)) = 0;
+nDeviations = numel(findpeaks(deviations));
+fDeviations = nDeviations/((time(end) - time(1))/60);
+dt = time(2) - time(1);
+meanDevDuration = (sum(deviations)*dt)/nDeviations;

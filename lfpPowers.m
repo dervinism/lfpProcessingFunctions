@@ -224,7 +224,7 @@ if ~strcmp(lfpCAR, 'replace')
   d = dir(fileName);
   nSampsTotal = d.bytes/chN/2;
 else
-  load(medianFile); %#ok<*LOAD>
+  load(fileName); %#ok<*LOAD>
   nSampsTotal = numel(medianTrace);
 end
 nChunksTotal = ceil(nSampsTotal/chunkSize);
@@ -248,18 +248,15 @@ while 1
   if ~isempty(dat)
     if strcmp(lfpCAR, 'replace')
       datSamples = size(dat,2);
-      if addMedian && (exist('medianTrace','var') && ~isempty(medianTrace))
-        median2Add = int16(repmat(medianTrace(sampleCount+1:sampleCount+datSamples),size(dat,1),1));
+      if (exist('medianTrace','var') && ~isempty(medianTrace))
+        median2Add = int16(repmat(medianTrace(sampleCount+1:sampleCount+datSamples),size(channelMedian,1),1));
       else
-        median2Add = int16(repmat(zeros(size(sampleCount+1:sampleCount+datSamples)),size(dat,1),1));
+        median2Add = int16(repmat(zeros(size(sampleCount+1:sampleCount+datSamples)),size(channelMedian,1),1));
       end
-      if addMedian && (exist('channelMedian','var') && ~isempty(channelMedian)) %#ok<*USENS,*NODEF>
+      if (exist('channelMedian','var') && ~isempty(channelMedian)) %#ok<*USENS,*NODEF>
         median2Add = median2Add + repmat(channelMedian(:,chunkInd),1,size(median2Add,2));
       end
-      if numel(swapOrder_temp) < nChans
-        median2Add = [median2Add; int16(zeros(1,size(median2Add,2)))];
-      end
-      dat = dat+median2Add;
+      dat(1:size(median2Add,1),:) = int16(dat(1:size(median2Add,1),:))+median2Add;
       sampleCount = sampleCount + datSamples;
     elseif strcmp(lfpCAR, 'subtract')
       if deleteChans
@@ -508,9 +505,9 @@ if transformFunc.a || transformFunc.b ~= 1
   for iCh = 1:numel(chOI)
     rippleRate{iCh} = syncLFP(rippleRate{iCh}, 1/srInterpInit, transformFunc);
     theta2deltaRatio{iCh} = syncLFP(theta2deltaRatio{iCh}, 1/srInterpInit, transformFunc);
-    slowPowerFilt{iCh} = syncLFP(slowPowerFilt{iCh}, 1/srInterpInit, transformFunc);
-    fastPowerFilt{iCh} = syncLFP(fastPowerFilt{iCh}, 1/srInterpInit, transformFunc);
-    ultraFastPowerFilt{iCh} = syncLFP(ultraFastPowerFilt{iCh}, 1/srInterpInit, transformFunc);
+    slowPower{iCh} = syncLFP(slowPower{iCh}, 1/srInterpInit, transformFunc);
+    fastPower{iCh} = syncLFP(fastPower{iCh}, 1/srInterpInit, transformFunc);
+    ultraFastPower{iCh} = syncLFP(ultraFastPower{iCh}, 1/srInterpInit, transformFunc);
     if spectrogram
       wtSpectrogram{iCh} = syncLFP(wtSpectrogram{iCh}, 1/srInterpInit, transformFunc);
     end
