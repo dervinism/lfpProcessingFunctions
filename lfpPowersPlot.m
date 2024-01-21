@@ -10,6 +10,8 @@ function [lfpPower, f, g] = lfpPowersPlot(fileName, chN, sr, options)
 %          some instances it may be a path to a file containing common
 %          reference average (CAR). Or it may also be a cell array holding
 %          paths to both. For more details see options.lfpCAR.
+%          The function also accepts csv files with a header row, a time
+%          column, and subsequent lfp channel columns.
 %        chN - number of channels in the LFP recording.
 %        sr - sampling rate in Hz.
 %        options - a structure variable with the following fields:
@@ -67,6 +69,15 @@ function [lfpPower, f, g] = lfpPowersPlot(fileName, chN, sr, options)
 %             'hist2' - LFP extreme histogram values method. It looks for
 %               two saturation values not including one around zero. This
 %               is the default method.
+%             'combined' - combined hist2 and diff method.
+%          SDfraction - fraction of the standard deviation window around
+%            saturation voltage value used for saturation detection if
+%            hist1 or hist2 methods are used (the default value is 0.05 uV)
+%            or fraction of the standard deviation window around 0 rate of
+%            change value if the diff detection method is used (the default
+%            value is 0.25 (uV/s). If combined method is used, one has to
+%            specify both values as a two element vector. In this case the
+%            default is [0.05 0.25].
 %          spectrogram should be set to true if in addition to frequency
 %            band power measures you also want to obtain a spectrogram. The
 %            default is false.
@@ -155,8 +166,12 @@ end
 if ~isfield(options, 'powerCalcMethod')
   options.powerCalcMethod = 'wavelet';
 end
+
 if ~isfield(options, 'saturationMethod')
   options.saturationMethod = 'hist2';
+end
+if ~isfield(options, 'SDfraction')
+  options.SDfraction = [];
 end
 
 if ~isfield(options, 'spectrogram')

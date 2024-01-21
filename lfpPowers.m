@@ -10,6 +10,8 @@ function [lfpPower, f] = lfpPowers(fileName, chN, sr, options)
 %          some instances it may be a path to a file containing common
 %          reference average (CAR). Or it may also be a cell array holding
 %          paths to both. For more details see options.lfpCAR.
+%          The function also accepts csv files with a header row, a time
+%          column, and subsequent lfp channel columns.
 %        chN - number of channels in the LFP recording.
 %        sr - sampling rate in Hz.
 %        options - a structure variable with the following fields:
@@ -67,6 +69,15 @@ function [lfpPower, f] = lfpPowers(fileName, chN, sr, options)
 %             'hist2' - LFP extreme histogram values method. It looks for
 %               two saturation values not including one around zero. This
 %               is the default method.
+%             'combined' - combined hist2 and diff method.
+%          SDfraction - fraction of the standard deviation window around
+%            saturation voltage value used for saturation detection if
+%            hist1 or hist2 methods are used (the default value is 0.05 uV)
+%            or fraction of the standard deviation window around 0 rate of
+%            change value if the diff detection method is used (the default
+%            value is 0.25 (uV/s). If combined method is used, one has to
+%            specify both values as a two element vector. In this case the
+%            default is [0.05 0.25].
 %          spectrogram should be set to true if in addition to frequency
 %            band power measures you also want to obtain a spectrogram. The
 %            default is false.
@@ -159,8 +170,12 @@ end
 if ~isfield(options, 'powerCalcMethod')
   options.powerCalcMethod = 'wavelet';
 end
+
 if ~isfield(options, 'saturationMethod')
   options.saturationMethod = 'hist2';
+end
+if ~isfield(options, 'SDfraction')
+  options.SDfraction = [];
 end
 
 if ~isfield(options, 'spectrogram')
@@ -193,6 +208,7 @@ lfpCAR = options.lfpCAR;
 transformFunc = options.transformFunc;
 powerCalcMethod = options.powerCalcMethod;
 saturationMethod = options.saturationMethod;
+SDfraction = options.SDfraction;
 spectrogram = options.spectrogram;
 rippleDuration = round(options.rippleDuration*srInterpInit);
 wGaussian = options.wGaussian;
@@ -220,9 +236,16 @@ f = {};
 %% Load and interpolate the data; then apply wavelet transform to estimate LFP band power
 % Load
 if ~strcmp(lfpCAR, 'replace')
-  fid = fopen(fileName, 'r');
-  d = dir(fileName);
-  nSampsTotal = d.bytes/chN/2;
+  if strcmp(fileName(end-2:end), 'csv')
+    [lfp, time] = loadcsv(fileName);
+    dt = mean(time(2:end)-time(1:end-1));
+    sr = 1/dt;
+    nSampsTotal = size(lfp,2);
+  else
+    fid = fopen(fileName, 'r');
+    d = dir(fileName);
+    nSampsTotal = d.bytes/chN/2;
+  end
 else
   load(fileName); %#ok<*LOAD>
   nSampsTotal = numel(medianTrace);
@@ -234,7 +257,17 @@ sampleCount = 0;
 while 1
   fprintf(1, 'chunk %d/%d\n', chunkInd, nChunksTotal);
   if ~strcmp(lfpCAR, 'replace')
-    dat = fread(fid, [chN chunkSize], '*int16');
+    if exist('lfp','var')
+      if (chunkInd-1)*chunkSize > size(lfp,2)
+        dat = [];
+      elseif chunkInd*chunkSize > size(lfp,2)
+        dat = lfp(:,(chunkInd-1)*chunkSize+1:end);
+      else
+        dat = lfp(:,(chunkInd-1)*chunkSize+1:chunkInd*chunkSize);
+      end
+    else
+      dat = fread(fid, [chN chunkSize], '*int16');
+    end
   else
     if sampleCount+chunkSize > nSampsTotal
       chunkSize = nSampsTotal - sampleCount;
@@ -346,8 +379,8 @@ end
 
 % Detect LFP trace saturations
 for iCh = 1:numel(chOI)
-  [LFPsaturations{iCh}, interpTimes, nLFPsaturations{iCh}, fLFPsaturations{iCh}, meanDurationLFPsaturations{iCh},...
-    f{iCh}] = detectLFPsaturations(LFPsaturations{iCh}, interpTimes(2)-interpTimes(1), saturationMethod, saturationPlot, fileName, chOI(iCh));
+  [LFPsaturations{iCh}, interpTimes, nLFPsaturations{iCh}, fLFPsaturations{iCh}, meanDurationLFPsaturations{iCh}, f{iCh}] =...
+    detectLFPsaturations(LFPsaturations{iCh}, interpTimes(2)-interpTimes(1), saturationMethod, saturationPlot, SDfraction, fileName, chOI(iCh));
 end
 
 
